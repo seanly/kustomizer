@@ -20,7 +20,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -134,7 +137,7 @@ func buildManifests(ctx context.Context, kustomizePath string, filePaths []strin
 	objects := make([]*unstructured.Unstructured, 0)
 	digests := []string{}
 	if kustomizePath != "" {
-		data, err := buildKustomization(kustomizePath)
+		data, err := buildKustomization(ctx, kustomizePath, identities)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -265,26 +268,168 @@ func matchExt(f string) bool {
 
 var kustomizeBuildMutex sync.Mutex
 
-func buildKustomization(base string) ([]byte, error) {
+// getKustomizationFile returns the content of kustomizer.yaml or kustomizer.yml if present.
+// The second return value is true when a kustomizer file was found and should be used.
+func getKustomizationFile(base string) ([]byte, bool, error) {
+	for _, name := range []string{"kustomizer.yaml", "kustomizer.yml"} {
+		p := path.Join(base, name)
+		data, err := ioutil.ReadFile(p)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, false, err
+		}
+		return data, true, nil
+	}
+	return nil, false, nil
+}
+
+// copyDir recursively copies the directory at src to dst.
+func copyDir(dst, src string) error {
+	return filepath.Walk(src, func(fpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, fpath)
+		if err != nil {
+			return err
+		}
+		dest := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(dest, info.Mode())
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+			return err
+		}
+		srcFile, err := os.Open(fpath)
+		if err != nil {
+			return err
+		}
+		dstFile, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
+		if err != nil {
+			srcFile.Close()
+			return err
+		}
+		_, err = io.Copy(dstFile, srcFile)
+		srcFile.Close()
+		dstFile.Close()
+		return err
+	})
+}
+
+const ociCacheDir = "oci-cache"
+
+// expandOCIResources resolves resources that are oci:// URLs: pulls each artifact,
+// writes the content under cacheDir, and replaces the resource entry with the
+// relative path to the cached file (oci-cache/<name>.yaml). k.Resources is modified in place.
+func expandOCIResources(ctx context.Context, k *kustypes.Kustomization, cacheDir string, identities []age.Identity) error {
+	if len(k.Resources) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return fmt.Errorf("creating OCI cache dir: %w", err)
+	}
+	// Dedupe by OCI URL: same URL reuses the same cached file.
+	cached := make(map[string]string)
+	for i, res := range k.Resources {
+		if !strings.HasPrefix(res, registry.URLPrefix) {
+			continue
+		}
+		ociURL := strings.TrimSpace(res)
+		if cachedPath, ok := cached[ociURL]; ok {
+			k.Resources[i] = cachedPath
+			continue
+		}
+		url, err := registry.ParseURL(ociURL)
+		if err != nil {
+			return fmt.Errorf("resource %q: %w", ociURL, err)
+		}
+		yml, _, err := registry.Pull(ctx, url, identities)
+		if err != nil {
+			return fmt.Errorf("pulling %s: %w", ociURL, err)
+		}
+		h := sha256.Sum256([]byte(ociURL))
+		name := hex.EncodeToString(h[:])[:16] + ".yaml"
+		cachePath := filepath.Join(cacheDir, name)
+		if err := ioutil.WriteFile(cachePath, []byte(yml), 0644); err != nil {
+			return fmt.Errorf("writing cache for %s: %w", ociURL, err)
+		}
+		rel := path.Join(ociCacheDir, name)
+		cached[ociURL] = rel
+		k.Resources[i] = rel
+	}
+	return nil
+}
+
+func buildKustomization(ctx context.Context, base string, identities []age.Identity) ([]byte, error) {
 	kustomizeBuildMutex.Lock()
 	defer kustomizeBuildMutex.Unlock()
 
-	kfile := path.Join(base, "kustomization.yaml")
-
 	fs := filesys.MakeFsOnDisk()
-	if !fs.Exists(kfile) {
-		return nil, fmt.Errorf("%s not found", kfile)
-	}
 
-	if path.IsAbs(base) {
+	// Resolve to absolute path for consistent handling and copyDir.
+	absBase := base
+	if !path.IsAbs(base) {
 		wd, err := os.Getwd()
 		if err != nil {
 			return nil, err
 		}
-		base, err = filepath.Rel(wd, base)
+		absBase = filepath.Join(wd, base)
+	}
+
+	// Prefer kustomizer.yaml / kustomizer.yml if present.
+	kustomizerContent, useKustomizer, err := getKustomizationFile(absBase)
+	if err != nil {
+		return nil, err
+	}
+
+	var workDir string
+	if useKustomizer {
+		tmpDir, err := ioutil.TempDir("", "kustomizer-build-")
+		if err != nil {
+			return nil, fmt.Errorf("creating temp dir: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
+		if err := copyDir(tmpDir, absBase); err != nil {
+			return nil, fmt.Errorf("copying kustomize directory: %w", err)
+		}
+		var kustomization kustypes.Kustomization
+		if err := yaml.Unmarshal(kustomizerContent, &kustomization); err != nil {
+			return nil, fmt.Errorf("parsing kustomizer file: %w", err)
+		}
+		if err := expandOCIResources(ctx, &kustomization, filepath.Join(tmpDir, ociCacheDir), identities); err != nil {
+			return nil, err
+		}
+		updated, err := yaml.Marshal(kustomization)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling kustomization: %w", err)
+		}
+		kustomizationPath := filepath.Join(tmpDir, "kustomization.yaml")
+		if err := ioutil.WriteFile(kustomizationPath, updated, 0644); err != nil {
+			return nil, fmt.Errorf("writing kustomization.yaml from kustomizer file: %w", err)
+		}
+		workDir = tmpDir
+	} else {
+		kfile := path.Join(absBase, "kustomization.yaml")
+		if !fs.Exists(kfile) {
+			return nil, fmt.Errorf("%s not found (also checked for kustomizer.yaml / kustomizer.yml)", kfile)
+		}
+		workDir = absBase
+	}
+
+	// kustomize expects relative path to cwd when possible; use absolute for temp dir.
+	baseForRun := workDir
+	if path.IsAbs(workDir) {
+		wd, err := os.Getwd()
 		if err != nil {
 			return nil, err
 		}
+		rel, err := filepath.Rel(wd, workDir)
+		if err != nil {
+			return nil, err
+		}
+		baseForRun = rel
 	}
 
 	buildOptions := &krusty.Options{
@@ -293,7 +438,7 @@ func buildKustomization(base string) ([]byte, error) {
 	}
 
 	k := krusty.MakeKustomizer(buildOptions)
-	m, err := k.Run(fs, base)
+	m, err := k.Run(fs, baseForRun)
 	if err != nil {
 		return nil, err
 	}

@@ -142,7 +142,7 @@ Verify the image using your cosign public key and list the Kubernetes manifests 
 $ kustomizer inspect artifact oci://${CONFIG_IMAGE}:${CONFIG_VERSION} \
     --verify --cosign-key cosign.pub
 Artifact: oci:// ghcr.io/stefanprodan/kustomizer-demo-app@sha256:98ebc5889a1031efe84d0d27cff4a235b9fadd5378781789b8e44cbf177424cd
-BuiltBy: kustomizer/v2.0.0
+BuiltBy: kustomizer/v2.3.0
 VerifiedBy: cosign
 CreatedAt: 2021-12-15T10:05:46Z
 Resources:

@@ -34,7 +34,7 @@ jobs:
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
-          username: stefanaprodan
+          username: seanly
           password: ${{ secrets.PUSH_GITHUB_TOKEN }}
       - name: Setup Syft
         uses: anchore/sbom-action/download-syft@v0.13.1

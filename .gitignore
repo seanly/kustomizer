@@ -18,3 +18,4 @@ bin/
 testbin/
 docs/cmd/
 Dockerfile.distroless
+kustomizer*

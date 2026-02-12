@@ -132,7 +132,7 @@ Configure your shell to load kustomizer completions:
 Signed release images are available at
 [ghcr.io/stefanprodan/kustomizer](https://github.com/stefanprodan/kustomizer/pkgs/container/kustomizer).
 The container images are multi-arch (amd64 and arm64) and they are tagged with the version number
-e.g. `ghcr.io/stefanprodan/kustomizer:v2.0.0`.
+e.g. `ghcr.io/stefanprodan/kustomizer:v2.3.0`.
 
 Verify the latest image with cosign:
 

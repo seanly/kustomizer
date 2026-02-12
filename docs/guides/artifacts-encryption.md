@@ -78,7 +78,7 @@ To inspect an artifact encrypted with your public key:
 $ kustomizer inspect artifact oci://ghcr.io/my-org/my-app:1.0.0 \
     --age-identities ./id_age 
 Artifact: oci://ghcr.io/my-org/my-app@sha256:1801d42d5459e81119dad543a7f1080ed2aadc92dcbb7c9dabf282692d6bf29d
-BuiltBy: kustomizer/v2.0.0
+BuiltBy: kustomizer/v2.3.0
 CreatedAt: 2021-12-29T08:35:40Z
 EncryptedWith: age-encryption.org/v1
 Checksum: 5b8c45af6951e977581122b7848b490f25b43ffd44ed7a82fd574eff6aac06be
