@@ -58,6 +58,7 @@ signs:
     args:
       - sign-blob
       - '--key=/tmp/cosign.key'
+      - '--tlog-upload=false'
       - '--output-signature=${signature}'
       - '${artifact}'
     artifacts: checksum
@@ -131,5 +132,5 @@ docker_manifests:
 docker_signs:
   - cmd: cosign
     stdin: '{{ .Env.COSIGN_PASSWORD }}'
-    args: ["sign", "--key=/tmp/cosign.key", "${artifact}"]
+    args: ["sign", "--key=/tmp/cosign.key", "--tlog-upload=false", "${artifact}"]
     artifacts: all

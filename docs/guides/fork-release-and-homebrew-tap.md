@@ -161,7 +161,71 @@ end
 
 ---
 
-## 四、发布 Release 的步骤
+## 四、本地验证 GoReleaser
+
+在推 tag 触发 CI 之前，可以在本机用 **snapshot 模式** 跑一遍 GoReleaser，只构建、不发布，用于检查配置和产物。
+
+### 1. 安装 GoReleaser
+
+```bash
+# macOS
+brew install goreleaser/tap/goreleaser
+
+# 或 Go 安装
+go install github.com/goreleaser/goreleaser/v2@latest
+```
+
+### 2. 只构建、不发布（推荐）
+
+不创建 GitHub Release、不推 tap、不推镜像，只生成 `dist/` 下的二进制和压缩包：
+
+```bash
+cd /path/to/kustomizer
+goreleaser release --snapshot --skip publish --rm-dist
+```
+
+- `--snapshot`：版本号会带 `-SNAPSHOT`，且不会按 tag 发布。
+- `--skip publish`：跳过发布（Release、tap、Docker、签名等）。
+- `--rm-dist`：先清空 `dist/` 再构建，便于重复试跑。
+
+产物在 `dist/` 下，可检查二进制和压缩包是否正常。
+
+### 3. 连签名一起测（需本机有 cosign 和密钥）
+
+若想顺带验证「校验和 + cosign 签名」流程，需要设置环境变量并保证 cosign 可用：
+
+```bash
+# 复制私钥到 /tmp（或任意路径，与下面 --key 一致）
+cp /path/to/cosign.key /tmp/cosign.key
+
+export COSIGN_PASSWORD='你的私钥密码'
+export GITHUB_REPOSITORY_OWNER='你的GitHub用户名'
+
+# 构建 + 签名 checksums，仍不发布
+goreleaser release --snapshot --skip publish --rm-dist
+```
+
+本机需已安装 cosign（`brew install cosign`）。若不想测签名，可去掉上述环境变量，并在命令里加上 `--skip sign`（若某版本 GoReleaser 支持）。
+
+### 4. 完全模拟 CI（仅当你要在本地做一次“真发布”时再用）
+
+在**已打 tag** 的分支上（例如 `git tag v2.3.0`），并配置好 `GITHUB_TOKEN`、`HOMEBREW_TAP_GITHUB_TOKEN`、`COSIGN_PASSWORD`、`COSIGN_KEY` 等后，可以执行：
+
+```bash
+export GITHUB_TOKEN='...'
+export GITHUB_REPOSITORY_OWNER='你的用户名'
+export HOMEBREW_TAP_GITHUB_TOKEN='...'
+export COSIGN_PASSWORD='...'
+# COSIGN_KEY 需已写入 /tmp/cosign.key（与 .goreleaser.yml 一致）
+
+goreleaser release --skip validate
+```
+
+这会真正创建 Release、推 tap、推镜像并签名。一般建议只在 CI 里做正式发布，本地以 **2** 或 **3** 为主即可。
+
+---
+
+## 五、发布 Release 的步骤
 
 1. 在 fork 仓库中确认代码已提交并推送到默认分支（如 `main`）。
 2. 打 tag 并推送（版本号按语义化版本，例如）：
@@ -177,7 +241,7 @@ end
 
 ---
 
-## 五、用户安装方式（你的 tap）
+## 六、用户安装方式（你的 tap）
 
 用户安装你 fork 的 kustomizer：
 
@@ -195,7 +259,7 @@ brew install seanly/tap/kustomizer
 
 ---
 
-## 六、本仓库已做的配置说明
+## 七、本仓库已做的配置说明
 
 - **`.github/workflows/release.yaml`**
   - 触发器：`push` 到 tag `v*`。
