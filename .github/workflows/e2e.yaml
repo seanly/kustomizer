@@ -19,22 +19,16 @@ jobs:
           - 5000:5000
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Restore Go cache
-        uses: actions/cache@v1
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+        uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.19.x
+          go-version: '1.22'
+          cache: true
       - name: Setup Kubernetes
-        uses: engineerd/setup-kind@v0.5.0
+        uses: engineerd/setup-kind@v0.8.0
         with:
-          version: v0.17.0
+          version: v0.26.0
       - name: Build
         run: make build
       - name: Test OCI

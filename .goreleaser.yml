@@ -1,3 +1,4 @@
+version: 2
 project_name: kustomizer
 changelog:
   use: github-native
@@ -49,6 +50,8 @@ sboms:
     artifacts: source
     documents:
       - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+    # Override default args: Syft from download-syft may not support --enrich
+    args: ["$artifact", "--output", "spdx-json=$document"]
 signs:
   - cmd: cosign
     stdin: '{{ .Env.COSIGN_PASSWORD }}'
@@ -60,12 +63,12 @@ signs:
     artifacts: checksum
 brews:
   - name: kustomizer
-    tap:
-      owner: stefanprodan
+    repository:
+      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    folder: Formula
+    directory: Formula
     homepage: "https://kustomizer.dev/"
     description: "Kustomizer CLI"
     dependencies:
@@ -87,7 +90,7 @@ before:
     - make dockerfile
 dockers:
   - image_templates:
-      - 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}-amd64'
+      - 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}-amd64'
     dockerfile: Dockerfile.distroless
     use: buildx
     goos: linux
@@ -102,7 +105,7 @@ dockers:
       - "--label=org.opencontainers.image.source={{ .GitURL }}"
       - "--platform=linux/amd64"
   - image_templates:
-      - 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}-arm64'
+      - 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}-arm64'
     dockerfile: Dockerfile.distroless
     use: buildx
     goos: linux
@@ -117,14 +120,14 @@ dockers:
       - "--label=org.opencontainers.image.source={{ .GitURL }}"
       - "--platform=linux/arm64"
 docker_manifests:
-  - name_template: 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}'
+  - name_template: 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}'
     image_templates:
-      - 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}-amd64'
-      - 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}-arm64'
-  - name_template: 'ghcr.io/stefanprodan/{{ .ProjectName }}:latest'
+      - 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}-amd64'
+      - 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}-arm64'
+  - name_template: 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:latest'
     image_templates:
-      - 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}-amd64'
-      - 'ghcr.io/stefanprodan/{{ .ProjectName }}:{{ .Tag }}-arm64'
+      - 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}-amd64'
+      - 'ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Tag }}-arm64'
 docker_signs:
   - cmd: cosign
     stdin: '{{ .Env.COSIGN_PASSWORD }}'
